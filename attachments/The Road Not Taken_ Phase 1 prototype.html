@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Road Not Taken</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f4f6fa;--panel:#fff;--line:#dde3ee;--tx:#111827;--mut:#5b6678;--acc:#0c9b7c;--alt:#2f66d8;--warn:#d6344a;--gold:#b7791f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#07090d;--panel:#0e131b;--line:#1f2a3a;--tx:#e8eef7;--mut:#8593a8;--acc:#5ee7c6;--alt:#7aa7ff;--warn:#ff6b7a;--gold:#f5c96b}}
+:root[data-theme="dark"]{--bg:#07090d;--panel:#0e131b;--line:#1f2a3a;--tx:#e8eef7;--mut:#8593a8;--acc:#5ee7c6;--alt:#7aa7ff;--warn:#ff6b7a;--gold:#f5c96b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:18px}
+h3{margin:14px 0 6px;font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+main{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px;padding:14px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+button,select,input{font:inherit;color:var(--tx)}
+button{background:transparent;border:1px solid var(--line);border-radius:10px;padding:6px 11px;cursor:pointer}
+button.p{background:var(--acc);border-color:transparent;color:#04110d;font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.badge{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--mut)}
+.note{color:var(--mut);font-size:12px}
+#map{width:100%;height:auto;display:block;border-radius:12px;cursor:crosshair;margin-bottom:6px}
+.opt{display:flex;justify-content:space-between;gap:8px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;margin-top:8px;cursor:pointer}
+.opt.sel{border-color:var(--acc)}
+.nudge{border-left:3px solid var(--gold);background:var(--bg);padding:10px 12px;margin-top:10px;border-radius:8px}
+.hist{font-size:12px;color:var(--mut);padding:3px 0;border-bottom:1px solid var(--line)}
+pre{white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--mut);max-height:200px;overflow:auto;background:var(--bg);padding:8px;border-radius:8px}
+</style>
+</head>
+<body>
+<header>
+<div><h1>The Road Not Taken</h1><div class="note">Every road remembers. Every journey learns. · Phase 1 prototype</div></div>
+<div class="row"><span class="badge" id="mode">SIMULATED</span><label class="row note"><input type="checkbox" id="live"> Live GPS</label><button id="theme">Theme</button></div>
+</header>
+<main>
+<section class="card">
+<svg id="map" viewBox="0 0 600 400" role="img" aria-label="Route map"></svg>
+<p class="note">Green recommended · blue familiar · red dashed closed · grey alternative · gold live track</p>
+<div class="row">
+<select id="scen" aria-label="Traffic scenario"><option value="free">Free-flowing traffic</option><option value="heavy">Heavy traffic on Direct</option><option value="closed">Direct route closed</option></select>
+<button data-act="preset" data-i="0">Habitual route</button>
+<button data-act="preset" data-i="1">Test B: congestion</button>
+<button data-act="preset" data-i="2">Test E: closure</button>
+<button data-act="seed">Seed history</button>
+<button id="gpsBtn" data-act="gps" hidden>Use my location</button>
+</div>
+<p class="note" id="hint"></p>
+</section>
+<section>
+<div class="card" id="panel"></div>
+<div class="card" id="side" style="margin-top:14px"></div>
+</section>
+</main>
+<script>
+const KEY='rnt-phase1',U=30,SPEED=[46,32,42],NAMES=['Bend A','Direct','Bend B'],SC={free:1,heavy:.5},JAM=1.6,
+W={eta:30,hist:25,traffic:15,dist:10,fam:10},
+PRE=[{o:[110,300],d:[470,110],s:'free'},{o:[110,300],d:[470,110],s:'heavy'},{o:[110,300],d:[470,110],s:'closed'}];
+let S=load(),o=null,d=null,names=['A','B'],live=false,ref=null,cs=[],dec={mode:'none'},sel=0,run=null,pos=null,msg='',tres='',expTxt='';
+const $=id=>document.getElementById(id),R=v=>Math.round(v*10)/10,pt=p=>p.map(R).join(','),
+dd=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1]),pd=(a,b)=>a.reduce((s,p,i)=>s+dd(p,b[i]),0)/a.length,
+near=(a,b)=>pd(a,b)<14,len=p=>p.reduce((s,q,i)=>i?s+dd(q,p[i-1]):s,0),acceptFix=a=>a<=50;
+
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||{j:[],p:{paused:false,streak:0}}}catch(e){return{j:[],p:{paused:false,streak:0}}}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+// Candidate generation: three deterministic curves between origin and destination (units: 1 unit = 30 m)
+function gen(a,b){const L=dd(a,b)||1,nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L,mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+return[-1,0,1].map(s=>{const cx=mx+nx*s*.28*L,cy=my+ny*s*.28*L,p=[];for(let i=0;i<16;i++){const t=i/15,u=1-t;p.push([u*u*a[0]+2*u*t*cx+t*t*b[0],u*u*a[1]+2*u*t*cy+t*t*b[1]])}return p})}
+function cands(a,b,scen){return gen(a,b).map((pts,i)=>{const km=len(pts)*U/1000,tr=scen==='live'?null:(scen==='heavy'&&i===1?'heavy':'free');
+return{id:i,name:NAMES[i],pts,km,traffic:tr,closed:scen==='closed'&&i===1,eta:km/SPEED[i]*60*(tr==='heavy'?JAM:1)}})}
+
+// Personal history for one candidate, matched by geometry (mean point distance)
+function stat(c,js){const m=js.filter(j=>j.status==='completed'&&near(j.pts,c.pts));
+return{uses:m.length,avg:m.length?m.reduce((s,j)=>s+j.min,0)/m.length:null,last:m.length?m[m.length-1].ts:0}}
+
+// Weighted score. A term is used only if every open candidate has it, so missing data never favours one route.
+function score(h){const hH=h.every(x=>x.avg!=null),hT=h.every(x=>x.c.traffic),mE=Math.min(...h.map(x=>x.c.eta)),mK=Math.min(...h.map(x=>x.c.km)),
+mU=Math.max(...h.map(x=>x.uses))||1,mH=hH?Math.min(...h.map(x=>x.avg)):0,m=new Map();
+h.forEach(x=>{const t={eta:[W.eta,mE/x.c.eta],dist:[W.dist,mK/x.c.km],fam:[W.fam,x.uses/mU]};
+if(hH)t.hist=[W.hist,mH/x.avg];if(hT)t.traffic=[W.traffic,SC[x.c.traffic]];
+let w=0,s=0;for(const k in t){w+=t[k][0];s+=t[k][0]*t[k][1]}m.set(x.c,s/w)});return m}
+
+// Stage 1: is switching worth it? (time saving vs familiar route). Stage 2 (score) ranks the worthwhile alternatives.
+function decide(cs,js,streak){const open=cs.filter(c=>!c.closed);
+if(!open.length)return{mode:'none',reason:'Every route is closed right now.'};
+const h=open.map(c=>({c,...stat(c,js)})),sc=score(h),fast=h.reduce((a,b)=>b.c.eta<a.c.eta?b:a).c;
+if(!h.some(x=>x.uses))return{mode:'standard',rec:fast,scores:sc,reason:'No personal history yet, so this is the fastest current estimate.'};
+const base=h.reduce((a,b)=>(b.uses>a.uses||(b.uses===a.uses&&b.last>a.last))?b:a).c,th=streak>=3?6:3,
+alts=h.filter(x=>x.c!==base&&base.eta-x.c.eta>=th);
+if(!alts.length)return{mode:'familiar',rec:base,base,scores:sc,th,reason:'Your familiar route is still the best choice right now.'};
+const best=alts.reduce((a,b)=>sc.get(b.c)>sc.get(a.c)?b:a).c;
+return{mode:'switch',rec:best,base,saving:base.eta-best.eta,th,scores:sc}}
+
+function lastIdx(){for(let k=S.j.length-1;k>=0;k--){const j=S.j[k];if(j.status==='completed'&&dd(j.o,o)<4&&dd(j.d,d)<4)return cs.findIndex(c=>near(j.pts,c.pts))}return-1}
+function resample(t){return Array.from({length:16},(_,i)=>t[Math.round(i*(t.length-1)/15)])}
+function finalize(f){return f.arrived&&f.track.length>=3?{status:'completed',pts:resample(f.track),min:f.min,km:f.km}:{status:'interrupted'}}
+function toU(lat,lng){return[300+(lng-ref.lng)*Math.cos(ref.lat*Math.PI/180)*111320/U,200-(lat-ref.lat)*110540/U]}
+
+function recompute(){if(!o||!d){cs=[];dec={mode:'none',reason:''};sel=0;return}
+cs=cands(o,d,live?'live':$('scen').value);dec=decide(cs,S.j,S.p.streak);const li=lastIdx();sel=li>=0?li:Math.max(0,cs.indexOf(dec.rec))}
+
+function draw(){let g='<defs><pattern id="gr" width="30" height="30" patternUnits="userSpaceOnUse"><path d="M30 0H0V30" fill="none" stroke="var(--line)"/></pattern></defs><rect width="600" height="400" fill="url(#gr)"/>';
+cs.forEach((c,i)=>{const col=c.closed?'var(--warn)':c===dec.rec?'var(--acc)':c===dec.base?'var(--alt)':'var(--mut)';
+g+=`<polyline points="${c.pts.map(pt).join(' ')}" fill="none" stroke="${col}" stroke-width="${i===sel?6:3}" stroke-linecap="round" opacity="${i===sel?1:.7}"${c.closed?' stroke-dasharray="7 6"':''}/>`});
+if(run&&run.track.length>1)g+=`<polyline points="${run.track.map(pt).join(' ')}" fill="none" stroke="var(--gold)" stroke-width="3"/>`;
+if(o)g+=`<circle cx="${o[0]}" cy="${o[1]}" r="7" fill="var(--acc)"/><text x="${o[0]+10}" y="${o[1]-9}" font-size="13" fill="var(--tx)">${names[0]}</text>`;
+if(d)g+=`<circle cx="${d[0]}" cy="${d[1]}" r="7" fill="var(--warn)"/><text x="${d[0]+10}" y="${d[1]-9}" font-size="13" fill="var(--tx)">${names[1]}</text>`;
+if(pos)g+=`<circle cx="${pos[0]}" cy="${pos[1]}" r="6" fill="var(--gold)" stroke="var(--tx)" stroke-width="2"/>`;
+$('map').innerHTML=g}
+
+function panel(){let h='';
+if(!o)h=`<h3>Plan a journey</h3><p class="note">${live?'Press “Use my location”, then click the map to choose a destination.':'Click the map to set your origin, then your destination.'}</p>`;
+else if(!d)h=`<h3>Destination</h3><p class="note">Click the map to set the destination.</p>`;
+else{h='<h3>Candidate routes</h3>'+cs.map((c,i)=>{const st=stat(c,S.j),s=dec.scores&&dec.scores.get(c),
+tag=[c.closed?'Closed · excluded':'',c===dec.base?'Familiar':'',c===dec.rec?'Recommended':''].filter(Boolean).join(' · ');
+return`<div class="opt ${i===sel?'sel':''}" data-act="sel" data-i="${i}"><div><b>${c.name}</b> <span class="badge">${tag}</span><div class="note">${c.km.toFixed(1)} km · ${c.closed?'closed':c.eta.toFixed(0)+' min est.'}${c.traffic?' · '+c.traffic+' traffic':live?' · no traffic data':''} · used ${st.uses}×${st.avg!=null?' · avg '+st.avg.toFixed(0)+' min':''}</div></div><div style="text-align:right"><b>${s!=null?Math.round(s*100):'–'}</b><div class="note">score</div></div></div>`}).join('')
++`<p class="note">Score weights: ETA 30, history 25, traffic 15, distance 10, familiarity 10. Safety (10) is excluded because no reliable data exists, so missing data is never read as safe or unsafe. Scores rank alternatives; a switch is offered only when the time saving is meaningful.</p>`;
+if(dec.mode==='switch'){if(!run){const bi=cs.indexOf(dec.base),ri=cs.indexOf(dec.rec),li=lastIdx();
+h+=`<div class="nudge"><b>Remember this road?</b><div>${li>=0?`You took ${cs[li].name} last time. `:''}${dec.base.name} is your familiar route, but ${dec.rec.name} is currently estimated to save ${dec.saving.toFixed(0)} min.</div><div class="row" style="margin-top:8px"><button class="p" data-act="go" data-i="${bi}">Take my familiar route</button><button class="p" data-act="go" data-i="${ri}">Show the faster route</button></div></div>`}}
+else h+=`<div class="nudge">${dec.reason}</div>`;
+if(run)h+=`<div class="row" style="margin-top:10px"><span class="badge">${run.live?'LIVE':'SIMULATED'} journey running</span><button data-act="stop">Stop journey</button></div>`;
+else h+=`<div class="row" style="margin-top:10px"><button class="p" data-act="go" data-i="${sel}" ${cs[sel]&&cs[sel].closed?'disabled':''}>${dec.mode==='switch'?'Continue with my selected route':'Start '+(live?'live':'simulated')+' journey'}</button><button data-act="reset">Clear</button></div>`}
+h+=`<p class="note">${msg}</p>`;$('panel').innerHTML=h}
+
+function side(){const n=S.j.filter(j=>j.status==='completed').length;
+$('side').innerHTML=`<h3>Route memory</h3><div class="note">${n} completed journeys stored · notification threshold ${S.p.streak>=3?6:3} min after ${S.p.streak} rejection(s) in a row</div>`
++(S.j.slice(-6).reverse().map(j=>`<div class="hist">${new Date(j.ts).toLocaleString()} · ${j.src} · ${j.status}${j.status==='completed'?` · ${j.km} km · ${j.min} min`:''}</div>`).join('')||'<div class="note">No journeys yet.</div>')
++`<div class="row" style="margin-top:10px"><label class="note"><input type="checkbox" id="pause" ${S.p.paused?'checked':''}> Pause recording</label><button data-act="export">Export JSON</button><button data-act="wipe">Delete all history</button></div><pre ${expTxt?'':'hidden'}>${expTxt}</pre>`
++`<h3>Self-test</h3><div class="row"><button data-act="tests">Run test suite</button></div><pre ${tres?'':'hidden'}>${tres}</pre>`}
+
+function render(){draw();panel();side();$('hint').textContent=run?'Journey running.':!o?(live?'Live mode: press Use my location first.':'Click the map to set your origin.'):!d?'Click the map to set the destination.':live?'Live candidates are geometric estimates. No traffic provider is connected.':'Simulated ETAs use a speed model plus the traffic scenario selected above.'}
+
+function go(i){const c=cs[i];if(run||!c||c.closed)return;
+if(live&&!navigator.geolocation){msg='This browser has no geolocation.';render();return}
+if(dec.mode==='switch'){S.p.streak=c===dec.rec?0:S.p.streak+1;save()}
+run={c,live,t0:live?Date.now():performance.now(),track:[]};
+if(live)run.wid=navigator.geolocation.watchPosition(onFix,e=>{msg='GPS error: '+e.message;render()},{enableHighAccuracy:true});
+else run.raf=requestAnimationFrame(frame);
+msg=live?'Live tracking started. Keep this tab open.':'Simulated journey started.';render()}
+
+function frame(t){const r=run;if(!r||r.live)return;const p=Math.min(1,(t-r.t0)/7000),P=r.c.pts,f=p*15,k=Math.min(14,Math.floor(f)),w=f-k;
+pos=[P[k][0]+(P[k+1][0]-P[k][0])*w,P[k][1]+(P[k+1][1]-P[k][1])*w];
+if(p<1){r.raf=requestAnimationFrame(frame);draw()}else end(finalize({arrived:true,track:P,min:r.c.eta*(.95+Math.random()*.1),km:r.c.km}))}
+
+function onFix(p){if(!run||!acceptFix(p.coords.accuracy))return;const q=toU(p.coords.latitude,p.coords.longitude);run.track.push(q);pos=q;
+if(dd(q,d)<2)end(finalize({arrived:true,track:run.track,min:(Date.now()-run.t0)/6e4,km:len(run.track)*U/1000}));else draw()}
+
+function end(f){const rec={o:o.map(R),d:d.map(R),src:run.live?'live':'sim',status:f.status,ts:Date.now()};
+if(f.status==='completed'){rec.pts=f.pts.map(p=>p.map(R));rec.min=+f.min.toFixed(1);rec.km=+f.km.toFixed(2)}
+if(S.p.paused)msg='Recording is paused, so nothing was stored.';
+else{S.j.push(rec);save();msg=f.status==='completed'?'Journey recorded.':'Journey marked interrupted. No route usage was recorded.'}
+stopRun();recompute();render()}
+
+function stopRun(){if(run){cancelAnimationFrame(run.raf);if(run.wid!=null)navigator.geolocation.clearWatch(run.wid)}run=null;pos=null}
+
+function reset(){if(run)return;o=d=null;names=['A','B'];msg='';recompute();render()}
+
+function setLive(v){live=v;$('live').checked=v;$('scen').disabled=v;$('gpsBtn').hidden=!v;$('mode').textContent=v?'LIVE GPS':'SIMULATED';o=d=null;names=['A','B'];msg='';recompute();render()}
+
+function useGps(){if(!navigator.geolocation){msg='This browser has no geolocation.';render();return}
+navigator.geolocation.getCurrentPosition(p=>{ref={lat:p.coords.latitude,lng:p.coords.longitude};o=[300,200];d=null;names=['You','B'];msg='Origin set from your location. Click the map to choose a destination.';recompute();render()},
+e=>{msg='Could not read location: '+e.message;render()},{enableHighAccuracy:true,timeout:15000})}
+
+function preset(i){if(run)return;const p=PRE[i];setLive(false);o=p.o.slice();d=p.d.slice();names=['Sector 19C','CP67'];$('scen').value=p.s;
+msg='Preset loaded. Seed history first to see route memory at work.';recompute();render()}
+
+function seed(){if(run)return;if(!o||!d||live)preset(0);const a=o,b=d,c=cands(a,b,'free'),t=Date.now(),
+mk=(x,ts)=>({o:a.map(R),d:b.map(R),pts:x.pts.map(p=>p.map(R)),km:+x.km.toFixed(2),min:+(x.eta*(.96+Math.random()*.08)).toFixed(1),src:'seed',status:'completed',ts});
+for(let k=9;k>=1;k--)S.j.push(mk(c[1],t-k*864e5));S.j.push(mk(c[2],t-36e5));save();
+msg='Seeded 9 journeys on Direct and 1 on Bend B.';recompute();render()}
+
+function tests(){const b=cands([110,300],[470,110],'free'),C=(i,eta,km,tr,cl)=>({id:i,name:NAMES[i],pts:b[i].pts,km,eta,traffic:tr,closed:!!cl}),
+J=(c,n,min,t0)=>Array.from({length:n},(_,k)=>({status:'completed',pts:c.pts,min,ts:t0+k}));
+const cases=[
+['A  Ten uses of the familiar route, which is also fastest: keep it',()=>{const cs=[C(1,21,12.2,'free'),C(0,25,12.8,'free')],x=decide(cs,[...J(cs[0],10,21,1),...J(cs[1],1,25,99)],0);return x.mode==='familiar'&&x.rec===cs[0]}],
+['B  Familiar route in heavy traffic, alternative meaningfully faster: switch',()=>{const cs=[C(1,40,12.2,'heavy'),C(0,31,12.8,'free')],x=decide(cs,[...J(cs[0],10,25,1),...J(cs[1],1,31,99)],0);return x.mode==='switch'&&x.rec===cs[1]}],
+['C  Equal distance, different times, no history: faster route wins',()=>{const cs=[C(0,24,13,'free'),C(2,26,13,'free')],x=decide(cs,[],0);return x.rec===cs[0]&&x.scores.get(cs[0])>x.scores.get(cs[1])}],
+['E  Shorter route is closed: never recommended',()=>{const cs=[C(1,14,11,'free',1),C(0,25,12.8,'free')],x=decide(cs,J(cs[0],8,14,1),0);return x.rec===cs[1]&&!x.rec.closed}],
+['F  Three rejections in a row raise the threshold from 3 to 6 minutes',()=>{const cs=[C(1,22,12.2,'free'),C(0,18,12.8,'free')],js=[...J(cs[0],9,22,1),...J(cs[1],1,18,99)];return decide(cs,js,0).mode==='switch'&&decide(cs,js,3).mode==='familiar'}],
+['G  No journey history: standard recommendation',()=>decide([C(1,22,12.2,'free'),C(0,18,12.8,'free')],[],0).mode==='standard'],
+['H  Interrupted or poor-GPS journeys are never counted',()=>{const cs=[C(1,22,12.2,'free')],f=finalize({arrived:false,track:[[1,1],[2,2],[3,3]]}),g=finalize({arrived:true,track:[[1,1]],min:1,km:0});
+return f.status==='interrupted'&&g.status==='interrupted'&&!acceptFix(120)&&decide(cs,[{status:'interrupted',pts:cs[0].pts,min:20,ts:1}],0).mode==='standard'}]];
+const out=cases.map(([n,f])=>{let ok=false;try{ok=!!f()}catch(e){}return(ok?'PASS  ':'FAIL  ')+n});
+out.push('SKIP  D  Mid-journey switching is deferred to Phase 3');tres=out.join('\n');side()}
+
+document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act,i=+el.dataset.i;
+if(a==='go')go(i);
+else if(a==='sel'){sel=i;render()}
+else if(a==='preset')preset(i);
+else if(a==='seed')seed();
+else if(a==='reset')reset();
+else if(a==='gps')useGps();
+else if(a==='stop'&&run)end(finalize({arrived:false,track:run.track}));
+else if(a==='export'){expTxt=JSON.stringify({journeys:S.j,prefs:S.p},null,1);side()}
+else if(a==='wipe'&&confirm('Delete all route history?')){S.j=[];S.p.streak=0;save();msg='History deleted.';recompute();render()}
+else if(a==='tests')tests()});
+
+document.addEventListener('change',e=>{const t=e.target;
+if(t.id==='pause'){S.p.paused=t.checked;save()}
+else if(t.id==='live'){if(run)t.checked=live;else setLive(t.checked)}
+else if(t.id==='scen'&&o&&d&&!run){recompute();render()}});
+
+$('map').addEventListener('click',e=>{if(run)return;const r=$('map').getBoundingClientRect(),p=[(e.clientX-r.left)/r.width*600,(e.clientY-r.top)/r.height*400];
+if(live){if(!o){msg='Press Use my location first.';render();return}d=p}
+else{if(!o||d){o=p;d=null;names=['A','B']}else d=p}
+msg='';recompute();render()});
+
+$('theme').onclick=()=>{const t=document.documentElement,dark=t.dataset.theme?t.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;t.dataset.theme=dark?'light':'dark'};
+
+render();
+</script>
+</body>
+</html>

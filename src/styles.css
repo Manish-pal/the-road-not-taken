@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "@fontsource/fraunces/latin-500.css";
+@import "@fontsource/fraunces/latin-600.css";
+@import "@fontsource/fraunces/latin-600-italic.css";
+@import "@fontsource/outfit/latin-400.css";
+@import "@fontsource/outfit/latin-500.css";
+@import "@fontsource/outfit/latin-600.css";
+
+@theme inline {
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-fg: var(--c-fg);
+  --color-muted: var(--c-muted);
+  --color-line: var(--c-line);
+  --color-gold: var(--c-gold);
+  --color-gold-soft: var(--c-gold-soft);
+  --color-ink: var(--c-ink);
+  --color-rec: var(--c-rec);
+  --color-fam: var(--c-fam);
+  --color-closed: var(--c-closed);
+  --color-map: var(--c-map);
+}
+
+:root {
+  --c-bg: #f3efe4;
+  --c-panel: #fffcf7;
+  --c-fg: #1c1914;
+  --c-muted: #5e564c;
+  --c-line: #e3d9c8;
+  --c-gold: #b8862d;
+  --c-gold-soft: #f4e6c4;
+  --c-ink: #1c1408;
+  --c-rec: #0e7a56;
+  --c-fam: #2a5bd7;
+  --c-closed: #b33b45;
+  --c-map: #f7f1e6;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg: #0c1210;
+    --c-panel: #141c19;
+    --c-fg: #e7eee9;
+    --c-muted: #9aaba2;
+    --c-line: #26332d;
+    --c-gold: #e0b15a;
+    --c-gold-soft: #3a3018;
+    --c-ink: #1a1408;
+    --c-rec: #3dcea0;
+    --c-fam: #7eb0ff;
+    --c-closed: #ff8b94;
+    --c-map: #101816;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --c-bg: #0c1210;
+  --c-panel: #141c19;
+  --c-fg: #e7eee9;
+  --c-muted: #9aaba2;
+  --c-line: #26332d;
+  --c-gold: #e0b15a;
+  --c-gold-soft: #3a3018;
+  --c-ink: #1a1408;
+  --c-rec: #3dcea0;
+  --c-fam: #7eb0ff;
+  --c-closed: #ff8b94;
+  --c-map: #101816;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    margin: 0;
+    background: var(--c-bg);
+    color: var(--c-fg);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  [role="switch"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--c-gold);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
